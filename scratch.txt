@@ -1,0 +1,90 @@
+
+// Byte operations that I think are not needed
+                // Bytes
+                data::GETBYTE0 => {
+                    // shift and clear other bits
+                    let byte = self.top() & 0xFF;
+                    self.push(byte);
+                }
+                data::GETBYTE1 => {
+                    let byte = (self.top() >> 8) & 0xFF;
+                    self.push(byte);
+                }
+                data::GETBYTE2 => {
+                    let byte = (self.top() >> 16) & 0xFF;
+                    self.push(byte);
+                }
+                data::GETBYTE3 => {
+                    let byte = (self.top() >> 24) & 0xFF;
+                    self.push(byte);
+                }
+                // All the casting may not be strictly necessary, but rust
+                // does not allow i32 & 0xFFFFFFFF as it is larger than i32::Max.
+                // A left shift will overwrite the sign bit, but it is easier to
+                // just set them all to unsigned to do the op and convert back at the
+                // end. I expect this can just be a static cast at comptime, but
+                // I am not 100% sure
+                data::SETBYTE0 => {
+                    let byte = self.top() as u32 & 0xFF;
+                    let val = self.from_top(1) as u32 & 0xFFFFFF00;
+                    self.set_from_top(1, (val | byte) as Data);
+                    self.pop(1);
+                }
+                data::SETBYTE1 => {
+                    let byte = (self.top() as u32 & 0x000000FF) << 8;
+                    let val = self.from_top(1) as u32 & 0xFFFF00FF;
+                    self.set_from_top(1, (val | byte) as Data);
+                    self.pop(1);
+                }
+                data::SETBYTE2 => {
+                    let byte = (self.top() as u32 & 0x000000FF) << 16;
+                    let val = self.from_top(1) as u32 & 0xFF00FFFF;
+                    self.set_from_top(1, (val | byte) as Data);
+                    self.pop(1);
+                }
+                data::SETBYTE3 => {
+                    let byte = (self.top() as u32 & 0x000000FF) << 24;
+                    let val = self.from_top(1) as u32 & 0x00FFFFFF;
+                    self.set_from_top(1, (val | byte) as Data);
+                    self.pop(1);
+                }
+                data::PACKBYTES => {
+                    let b0 = self.top() & 0xFF;
+                    let b1 = (self.from_top(1) & 0xFF) << 8;
+                    let b2 = (self.from_top(2) & 0xFF) << 16;
+                    let b3 = (self.from_top(3) & 0xFF) << 24;
+                    self.set_from_top(3, b0 | b1 | b2 | b3);
+                    self.pop(3);
+                }
+                data::UNPACKBYTES => {
+                    let b0 = self.top() & 0xFF;
+                    let b1 = (self.top() >> 8) & 0xFF;
+                    let b2 = (self.top() >> 16) & 0xFF;
+                    let b3 = (self.top() >> 24) & 0xFF;
+                    self.set_top(b0);
+                    self.push(b1);
+                    self.push(b2);
+                    self.push(b3);
+                }
+
+// Memory copies that I probably want, but not yet
+                data::STACKTOHEAPCOPY => {
+                    let start_idx = program[self.pc + 1] as usize;
+                    let heap_ptr = program[self.pc + 2] as Pointer;
+                    let heap_idx = program[self.pc + 3] as usize; // dest of copy
+                    let amt = program[self.pc + 4] as usize;
+                    let slc = &self.stack[start_idx..(start_idx + amt)];
+                    self.heap.copy_to(heap_ptr, heap_idx, slc);
+                    self.pc += 4;
+                }
+                data::HEAPTOSTACKCOPY => {
+                    let heap_ptr = program[self.pc + 1] as Pointer;
+                    let heap_idx = program[self.pc + 2] as usize; // start of copy
+                    let dest_idx = program[self.pc + 3] as usize;
+                    let amt = program[self.pc + 4] as usize;
+                    let slc = self.heap.get_slice(heap_ptr, heap_idx, amt);
+                    for (dest, src) in self.stack[dest_idx..(dest_idx + amt)].iter_mut().zip(slc) {
+                        *dest = *src;
+                    }
+                    self.pc += 4;
+                }
